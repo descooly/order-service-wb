@@ -1,0 +1,25 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Order Lookup</title>
+    <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+    <h2>Order Lookup</h2>
+    <input type="text" id="order_uid" placeholder="Enter Order UID">
+    <button onclick="fetchOrder()">Get Order</button>
+    <div id="result"></div>
+
+    <script>
+        async function fetchOrder() {
+            const uid = document.getElementById('order_uid').value.trim();
+            if (!uid) return;
+
+            const response = await fetch(`/order?order_uid=${encodeURIComponent(uid)}`);
+            const text = await response.text();
+            document.getElementById('result').textContent = text;
+        }
+    </script>
+</body>
+</html>
