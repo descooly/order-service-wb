@@ -17,7 +17,7 @@ func main() {
 	defer sc.Close()
 
 	order := internal.OrderStruct{
-		OrderUID:          "TEST345",
+		OrderUID:          "TEST123",
 		TrackNumber:       "2222221111111",
 		Entry:             "WBIL",
 		Locale:            "en",

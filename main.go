@@ -118,10 +118,10 @@ func main() {
 	http.Handle("/static/", http.StripPrefix("/static/", http.FileServer(http.Dir("static/"))))
 	http.HandleFunc("/order", service.HTTPHandler)
 
-	srv := &http.Server{Addr: ":8080", Handler: nil}
+	srv := &http.Server{Addr: ":8080"}
 	go func() {
 		log.Println("HTTP server starting on :8080")
-		if err := http.ListenAndServe(); err != http.ErrServerClosed {
+		if err := srv.ListenAndServe(); err != http.ErrServerClosed {
 			log.Fatalf("HTTP server failed: %v", err)
 		}
 	}()
@@ -143,8 +143,7 @@ func main() {
 
 	sub, err := sc.Subscribe(subject, service.HandleMsg, stan.DurableName("order-cache-durable"))
 	if err != nil {
-		log.Println(err)
-		return
+		log.Fatalf("NATS subscribe Failed: %v", err)
 	}
 	log.Printf("Subscribed to channel")
 
