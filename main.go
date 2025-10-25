@@ -2,15 +2,19 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"database/sql"
 	"encoding/json"
 	"fmt"
 	"log"
 	"net/http"
 	"os"
+	"os/signal"
 	"project/internal"
 	my_cache "project/internal/cache"
 	database "project/internal/db"
+	"syscall"
+	"time"
 
 	_ "github.com/lib/pq"
 	"github.com/nats-io/stan.go"
@@ -91,7 +95,6 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
-	defer db.Close()
 	log.Println("Connected to DB")
 
 	existingOrders, err := database.LoadOrders(db)
@@ -105,21 +108,22 @@ func main() {
 	}
 	log.Printf("Cache initialized with %d orders", service.cache.Len())
 
+	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/" {
+			http.ServeFile(w, r, "static/index.html")
+			return
+		}
+		http.NotFound(w, r)
+	})
+	http.Handle("/static/", http.StripPrefix("/static/", http.FileServer(http.Dir("static/"))))
+	http.HandleFunc("/order", service.HTTPHandler)
+
+	srv := &http.Server{Addr: ":8080", Handler: nil}
 	go func() {
-		log.Println("HTTP Server starting on :8080")
-		http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
-			if r.URL.Path == "/" {
-				http.ServeFile(w, r, "static/index.html")
-				return
-			}
-			http.NotFound(w, r)
-		})
-
-		http.Handle("/static/", http.StripPrefix("/static/", http.FileServer(http.Dir("static/"))))
-
-		http.HandleFunc("/order", service.HTTPHandler)
-
-		log.Fatal(http.ListenAndServe(":8080", nil))
+		log.Println("HTTP server starting on :8080")
+		if err := http.ListenAndServe(); err != http.ErrServerClosed {
+			log.Fatalf("HTTP server failed: %v", err)
+		}
 	}()
 
 	natsHost := os.Getenv("NATS_HOST")
@@ -134,7 +138,7 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
-	defer sc.Close()
+
 	log.Println("Connected to test-cluster")
 
 	sub, err := sc.Subscribe(subject, service.HandleMsg, stan.DurableName("order-cache-durable"))
@@ -144,7 +148,25 @@ func main() {
 	}
 	log.Printf("Subscribed to channel")
 
-	defer sub.Unsubscribe()
+	signalChan := make(chan os.Signal, 1)
+	signal.Notify(signalChan, syscall.SIGINT, syscall.SIGTERM)
+	<-signalChan
 
-	select {}
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	if err := srv.Shutdown(ctx); err != nil {
+		log.Printf("HTTP shutdown error: %v", err)
+	}
+
+	if sub != nil {
+		sub.Unsubscribe()
+	}
+	if sc != nil {
+		sc.Close()
+	}
+	if db != nil {
+		db.Close()
+	}
+
+	log.Println("Shutdown complete")
 }
