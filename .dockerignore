@@ -1,6 +1,4 @@
 **/*.go
-**/*.mod
-**/*.sum
 **/go.work*
 **/go.work.sum
 **/*.sql
@@ -9,5 +7,7 @@
 **/*.dockerignore
 **/publisher/
 **/migrations/
-**/.*        
-!main.go     
+**/.*
+!go.mod
+!go.sum
+!main.go
