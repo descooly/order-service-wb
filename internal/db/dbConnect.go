@@ -3,28 +3,43 @@ package database
 import (
 	"database/sql"
 	"fmt"
-	"project/internal"
+	"os"
+
+	"github.com/descooly/order-service-wb/internal/model"
 
 	_ "github.com/lib/pq"
 )
 
-func ConnectDB(dbHost string) (*sql.DB, error) {
+func getEnv(key, fallback string) string {
+	if value := os.Getenv(key); value != "" {
+		return value
+	}
+	return fallback
+}
+
+func ConnectDB() (*sql.DB, error) {
 	connStr := fmt.Sprintf(
-		"host=%s user=myuser password=myuserpass dbname=myappdb sslmode=disable",
-		dbHost,
+		"host=%s port=%s user=%s password=%s dbname=%s sslmode=disable",
+		getEnv("DB_HOST", "localhost"),
+		getEnv("DB_PORT", "5432"),
+		getEnv("DB_USER", "myuser"),
+		getEnv("DB_PASSWORD", "myuserpass"),
+		getEnv("DB_NAME", "myappdb"),
 	)
+
 	db, err := sql.Open("postgres", connStr)
 	if err != nil {
-		return nil, fmt.Errorf("failed to connect, error: %w", err)
+		return nil, fmt.Errorf("failed to open DB connection: %w", err)
 	}
 
 	if err := db.Ping(); err != nil {
-		return nil, fmt.Errorf("failed to ping, error: %w", err)
+		return nil, fmt.Errorf("failed to ping DB: %w", err)
 	}
+
 	return db, nil
 }
 
-func InsertOrder(db *sql.DB, order *internal.OrderStruct) error {
+func InsertOrder(db *sql.DB, order *model.OrderStruct) error {
 	trnsact, err := db.Begin()
 	if err != nil {
 		return err
@@ -99,7 +114,7 @@ func InsertOrder(db *sql.DB, order *internal.OrderStruct) error {
 	return trnsact.Commit()
 }
 
-func LoadOrders(db *sql.DB) ([]internal.OrderStruct, error) {
+func LoadOrders(db *sql.DB) ([]model.OrderStruct, error) {
 	var dummy int
 	rows, err := db.Query(`SELECT id, order_uid, track_number, entry, locale, internal_signature, customer_id, delivery_service, shardkey, sm_id, date_created, oof_shard FROM order_info`)
 	if err != nil {
@@ -107,11 +122,11 @@ func LoadOrders(db *sql.DB) ([]internal.OrderStruct, error) {
 	}
 	defer rows.Close()
 
-	var orders []internal.OrderStruct
-	orderMap := make(map[int]*internal.OrderStruct)
+	var orders []model.OrderStruct
+	orderMap := make(map[int]*model.OrderStruct)
 
 	for rows.Next() {
-		var order internal.OrderStruct
+		var order model.OrderStruct
 		var id int
 		err := rows.Scan(&id, &order.OrderUID, &order.TrackNumber, &order.Entry, &order.Locale, &order.InternalSignature, &order.CustomerId, &order.DeliveryService, &order.Shardkey, &order.SmId, &order.DateCreated, &order.OofShard)
 		if err != nil {
@@ -131,7 +146,7 @@ func LoadOrders(db *sql.DB) ([]internal.OrderStruct, error) {
 	defer delRows.Close()
 
 	for delRows.Next() {
-		var del internal.Delivery
+		var del model.Delivery
 		var orderID int
 		err := delRows.Scan(&dummy, &orderID, &del.Name, &del.Phone, &del.Zip, &del.City, &del.Address, &del.Region, &del.Email)
 		if err != nil {
@@ -152,7 +167,7 @@ func LoadOrders(db *sql.DB) ([]internal.OrderStruct, error) {
 	defer PayRows.Close()
 
 	for PayRows.Next() {
-		var pay internal.Payment
+		var pay model.Payment
 		var orderID int
 		err := PayRows.Scan(&dummy, &orderID, &pay.Transaction, &pay.RequestId, &pay.Currency, &pay.Provider, &pay.Amount, &pay.PaymentDt, &pay.Bank, &pay.DeliveryCost, &pay.GoodsTotal, &pay.CustomFee)
 		if err != nil {
@@ -173,7 +188,7 @@ func LoadOrders(db *sql.DB) ([]internal.OrderStruct, error) {
 	defer ItemRows.Close()
 
 	for ItemRows.Next() {
-		var it internal.Item
+		var it model.Item
 		var orderID int
 		err := ItemRows.Scan(&dummy, &orderID, &it.ChrtId, &it.TrackNumber, &it.Price, &it.Rid, &it.Name, &it.Sale, &it.Size, &it.TotalPrice, &it.NmId, &it.Brand, &it.Status)
 		if err != nil {

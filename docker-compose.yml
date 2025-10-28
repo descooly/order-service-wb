@@ -1,11 +1,4 @@
-version: '3.8'
 services:
-  nats:
-    image: nats-streaming
-    ports:
-      - "4222:4222"
-      - "8222:8222"
-
   postgres:
     image: postgres:15
     environment:
@@ -13,17 +6,43 @@ services:
       POSTGRES_USER: myuser
       POSTGRES_PASSWORD: myuserpass
     ports:
-      - "5432:5432"
+      - '5432:5432'
     volumes:
-      - ./init.sql:/docker-entrypoint-initdb.d/init.sql
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U myuser -d myappdb']
+      interval: 1s
+      timeout: 5s
+      retries: 10
+
+  nats-streaming:
+    image: nats-streaming:0.25.5-linux
+    command: ['-p', '4222', '-m', '8222', '--cluster_id', 'test-cluster']
+    ports:
+      - '4222:4222'
+      - '8222:8222'
+
+  migrate:
+    image: migrate/migrate
+    volumes:
+      - ./migrations:/migrations
+    command: >
+      -path /migrations
+      -database postgres://myuser:myuserpass@postgres:5432/myappdb?sslmode=disable
+      up
+    depends_on:
+      postgres:
+        condition: service_healthy
 
   order-service:
     build: .
     ports:
-      - "8080:8080"
+      - '8080:8080'
+    env_file:
+      - .env
     depends_on:
-      - nats
-      - postgres
-    environment:
-      DB_HOST: postgres   
-      NATS_HOST: nats     
+      - migrate
+      - nats-streaming
+
+volumes:
+  postgres_data:

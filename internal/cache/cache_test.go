@@ -1,15 +1,16 @@
-package my_cache
+package cache
 
 import (
-	"project/internal"
 	"testing"
 	"time"
+
+	"github.com/descooly/order-service-wb/internal/model"
 )
 
 func TestSetAndGet(t *testing.T) {
 	c := New()
 
-	order := internal.OrderStruct{
+	order := model.OrderStruct{
 		OrderUID:          "testy_test123",
 		TrackNumber:       "2222221111111",
 		Entry:             "WBIL",
@@ -21,7 +22,7 @@ func TestSetAndGet(t *testing.T) {
 		SmId:              99,
 		DateCreated:       time.Date(2021, time.November, 26, 6, 22, 19, 0, time.UTC),
 		OofShard:          "1",
-		Delivery: internal.Delivery{
+		Delivery: model.Delivery{
 			Name:    "Test Testov",
 			Phone:   "+9720000000",
 			Zip:     "2639809",
@@ -30,7 +31,7 @@ func TestSetAndGet(t *testing.T) {
 			Region:  "Kraiot",
 			Email:   "test@gmail.com",
 		},
-		Payment: internal.Payment{
+		Payment: model.Payment{
 			Transaction:  "b563feb7b2b84b6test",
 			RequestId:    "",
 			Currency:     "USD",
@@ -42,7 +43,7 @@ func TestSetAndGet(t *testing.T) {
 			GoodsTotal:   317,
 			CustomFee:    0,
 		},
-		Items: []internal.Item{
+		Items: []model.Item{
 			{
 				ChrtId:      9934930,
 				TrackNumber: "WBILMTESTTRACK",

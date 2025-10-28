@@ -3,15 +3,17 @@ package main
 import (
 	"net/http"
 	"net/http/httptest"
-	"project/internal"
-	my_cache "project/internal/cache"
 	"testing"
+
+	my_cache "github.com/descooly/order-service-wb/internal/cache"
+	"github.com/descooly/order-service-wb/internal/model"
+	"github.com/descooly/order-service-wb/internal/service"
 )
 
 func TestHTTPHandler(t *testing.T) {
 	c := my_cache.New()
-	c.Set(internal.OrderStruct{OrderUID: "TEST123"})
-	service := OrderService{cache: c}
+	c.Set(model.OrderStruct{OrderUID: "TEST123"})
+	service := service.OrderService{Cache: c}
 
 	req := httptest.NewRequest("GET", "/order?order_uid=TEST123", nil)
 	rr := httptest.NewRecorder()
