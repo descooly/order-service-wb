@@ -3,8 +3,6 @@
 Демонстрационный сервис для приёма заказов через **NATS Streaming**, сохранения в **PostgreSQL** и отдачи данных по **HTTP**.  
 Включает **in-memory кэш**, **восстановление из БД при старте**, **graceful shutdown** и простой **HTML-интерфейс** для просмотра заказов.
 
----
-
 ## Используемые технологии
 
 - **Golang** — основной бэкенд (модули, unit-тесты)
@@ -12,8 +10,7 @@
 - **NATS Streaming** — брокер сообщений
 - **Docker & Docker Compose** — оркестрация
 - **HTML + CSS** — минималистичный веб-интерфейс
-
----
+- **golang-migrate** — управление миграциями базы данных
 
 ## Основные функции
 
@@ -30,8 +27,8 @@
   - `GET /order?order_uid=...` — возвращает заказ из кэша в формате JSON.
 - Простой веб-интерфейс (`/`) с формой ввода `order_uid`.
 - Graceful shutdown: корректное завершение при `Ctrl+C` (ожидание завершения обработки, закрытие соединений).
-
----
+- Управление схемой БД через **SQL-миграции** (инструмент `golang-migrate`).
+- Статические файлы встроены в бинарник с помощью `//go:embed`.
 
 ## Структура проекта
 
@@ -40,31 +37,37 @@ project/
 ├── internal/
 │   ├── cache/              # In-memory кэш
 │   │   └── cache.go        # OrderCache + Set/Get
-│   └── db/                 # Работа с БД
-│       ├── dbConnect.go    # Подключение к PostgreSQL, InsertOrder, LoadOrders
-│       └── struct.go       # Структуры OrderStruct, Delivery, Payment, Item
+│   ├── db/                 # Работа с БД
+│   │   └── dbConnect.go    # Подключение, InsertOrder, LoadOrders
+│   ├── httpserver/         # HTTP-сервер и обработчики
+│   │   ├── server.go       # Запуск сервера, маршруты
+│   │   └── static/         # Веб-интерфейс (встроен через embed)
+│   ├── model/              # Структуры данных
+│   │   └── struct.go       # OrderStruct, Delivery, Payment, Item
+│   ├── nats/               # Работа с NATS Streaming
+│   │   └── subscriber.go   # Подписка на канал
+│   └── service/            # Бизнес-логика
+│       └── service.go      # Обработка сообщений и HTTP-запросов
+├── main/                   # Точка входа
+│   └── main.go             # Инициализация зависимостей и запуск
+├── migrations/             # SQL-миграции
+│   ├── 000001_init_schema.up.sql
+│   └── 000001_init_schema.down.sql
 ├── publisher/              # Утилита для публикации тестовых заказов
 │   └── publisher.go
-├── static/                 # Статические файлы
-│   ├── index.html          # Главная страница
-│   └── style.css           # Стили
-├── main.go                 # Точка входа (NATS, HTTP, graceful shutdown)
-├── init.sql                # SQL-скрипт создания таблиц
+├── .dockerignore           # Исключение файлов из Docker-образа
+├── .env                    # Переменные окружения для Docker Compose
 ├── docker-compose.yml      # Оркестрация контейнеров
 ├── Dockerfile              # Сборка Go-образа
 ├── go.mod
 └── go.sum
 ```
 
----
-
 ## Как запустить проект
 
 ### Требования
 
 - Docker и Docker Compose
-
----
 
 ### Запуск через Docker Compose
 
@@ -74,100 +77,103 @@ docker-compose up --build
 
 Это:
 
-1. Создаст и запустит PostgreSQL с таблицами из `init.sql`
-2. Запустит NATS Streaming
-3. Соберёт и запустит Go-сервис
-4. Раздаст статику через встроенный HTTP-сервер
+- Создаст и запустит PostgreSQL
+- Применит SQL-миграции из папки `migrations/`
+- Запустит NATS Streaming
+- Соберёт и запустит Go-сервис
+- Раздаст статику через встроенный HTTP-сервер
 
-Откройте в браузере: [http://localhost:8080](http://localhost:8080)
+Откройте в браузере: http://localhost:8080
 
----
+## Как протестировать
 
-### Как протестировать
+### Отправьте тестовый заказ:
 
-1. **Отправьте тестовый заказ**:
-   ```bash
-   cd publisher
-   go run main.go
-   ```
-   Сервис получит сообщение, сохранит в БД и кэш.
+```bash
+cd publisher
+go run main.go
+```
 
-2. **Проверьте через веб-интерфейс**:
-   - Перейдите на [http://localhost:8080](http://localhost:8080)
-   - Введите `b563feb7b2b84b6test`
-   - Вы увидите JSON с деталями заказа
+Сервис получит сообщение, сохранит в БД и кэш.
 
----
+### Проверьте через веб-интерфейс:
+
+- Перейдите на http://localhost:8080
+- Введите `b563feb7b2b84b6test`
+- Вы увидите JSON с деталями заказа
 
 ## Стресс-тесты
 
-> Результаты тестов 
+Тестирование выполнено с помощью `vegeta`.
 
-### vegeta (rate=100, 30s):
+**vegeta (rate=100, 30s):**
 ```
-Requests      [total, rate, throughput]         3000, 100.03, 100.03
-Duration      [total, attack, wait]             29.99s, 29.99s, 535.6µs
-Latencies     [mean, 50, 95, 99, max]          417.259µs, 541.416µs, 868.268µs, 1.033507ms, 27.1522ms
+Requests      [total, rate, throughput]         3000, 100.04, 100.04
+Duration      [total, attack, wait]             29.989s, 29.989s, 0s
+Latencies     [min, mean, 50, 90, 95, 99, max]  0s, 194.911µs, 0s, 560.974µs, 600.693µs, 1.19ms, 20.333ms
+Bytes In      [total, mean]                     1998000, 666.00
 Success       [ratio]                           100.00%
 Status Codes  [code:count]                      200:3000
 ```
 
-### vegeta (rate=500, 30s):
+**vegeta (rate=500, 30s):**
 ```
-Requests      [total, rate, throughput]         15000, 500.03, 500.03
+Requests      [total, rate, throughput]         15000, 500.04, 500.04
 Duration      [total, attack, wait]             29.997s, 29.997s, 0s
-Latencies     [mean, 50, 95, 99, max]          57.433µs, 0s, 336.615µs, 575.18µs, 21.4045ms
+Latencies     [min, mean, 50, 90, 95, 99, max]  0s, 79.591µs, 0s, 118.788µs, 550.994µs, 1.122ms, 22.501ms
+Bytes In      [total, mean]                     9990000, 666.00
 Success       [ratio]                           100.00%
 Status Codes  [code:count]                      200:15000
 ```
 
-### vegeta (rate=1000, 10s):
+**vegeta (rate=1000, 10s):**
 ```
-Requests      [total, rate, throughput]         10000, 1000.11, 1000.11
-Duration      [total, attack, wait]             9.998s, 9.998s, 0s
-Latencies     [mean, 50, 95, 99, max]          50.073µs, 0s, 80.896µs, 480.599µs, 23.5528ms
+Requests      [total, rate, throughput]         10000, 1000.14, 1000.14
+Duration      [total, attack, wait]             9.999s, 9.999s, 0s
+Latencies     [min, mean, 50, 90, 95, 99, max]  0s, 111.538µs, 0s, 36.432µs, 141.1µs, 2.427ms, 28.144ms
+Bytes In      [total, mean]                     6660000, 666.00
 Success       [ratio]                           100.00%
 Status Codes  [code:count]                      200:10000
 ```
 
-### vegeta (rate=10000, 10s):
+**vegeta (rate=10000, 10s):**
 ```
-Requests      [total, rate, throughput]         99995, 10000.24, 10000.24
-Duration      [total, attack, wait]             9.999s, 9.999s, 0s
-Latencies     [mean, 50, 95, 99, max]          245.938µs, 0s, 582.768µs, 2.239727ms, 90.3543ms
-Success       [ratio]                           100.00%
-Status Codes  [code:count]                      200:99995
+Requests      [total, rate, throughput]         99999, 10000.11, 9803.71
+Duration      [total, attack, wait]             10s, 10s, 0s
+Latencies     [min, mean, 50, 90, 95, 99, max]  0s, 9.426ms, 0s, 845.471µs, 73.192ms, 237.381ms, 494.721ms
+Bytes In      [total, mean]                     65291310, 652.92
+Success       [ratio]                           98.04%
+Status Codes  [code:count]                      0:1964  200:98035
+Error Set:
+Get "http://localhost:8080/order?order_uid=TEST123": dial tcp ...: connectex: No connection could be made because the target machine actively refused it.
 ```
 
----
+> Примечание: при высокой нагрузке (10k RPS) возможны временные отказы соединения из-за ограничений ОС или Docker. Сервис остаётся стабильным при нагрузке до 1000 RPS.
 
 ## Тестирование
 
-Запуск unit-тестов:
+### Запуск unit-тестов:
+
 ```bash
 go test ./...
 ```
 
 Покрыты:
 - Кэш (`internal/cache`)
-- HTTP-обработчик (`main_test.go`)
+- HTTP-обработчик (`main/main_test.go`)
 
----
-
-## Graceful Shutdown
+### Graceful Shutdown
 
 При получении сигнала `SIGINT` или `SIGTERM`:
 - Останавливается подписка на NATS
 - Закрывается соединение с PostgreSQL
 - Корректно завершается HTTP-сервер
 
----
-
 ## Инициализация базы данных
 
-Файл `init.sql` содержит `CREATE TABLE` для всех необходимых таблиц.  
-При первом запуске `docker-compose` автоматически выполнит этот скрипт.
-
+Схема базы данных управляется через **миграции**.  
+При первом запуске `docker-compose` автоматически применяет все миграции из папки `migrations/`.  
+Файл `init.sql` больше не используется.
 ---
 
 ## Короткая демонстрация работы 
