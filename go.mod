@@ -1,4 +1,4 @@
-module project
+module github.com/descooly/order-service-wb
 
 go 1.25.1
 
